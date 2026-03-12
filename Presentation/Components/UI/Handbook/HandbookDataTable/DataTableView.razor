@@ -1,0 +1,116 @@
+﻿@using Presentation.Utils.Services.DeviceTypes
+
+<Grid TItem="TableItem"
+      @ref="grid"
+      AllowRowClick="true"
+      Class="table table-hover table-bordered table-striped"
+      DataProvider="ItemsDataProvider"
+      HeaderRowCssClass="bg-primary text-white border-bottom-0"
+      OnRowClick="OnRowClick"
+      Responsive="true"
+      Unit="Unit.Px"
+      RowKeySelector="item => item.Id">
+
+    <GridColumns>
+        <GridColumn TItem="TableItem" HeaderText="Название">
+            @context.Name.Value
+        </GridColumn>
+
+        <GridColumn TItem="TableItem" HeaderText="Описание">
+            @context.Description?.Value
+        </GridColumn>
+
+        <GridColumn TItem="TableItem" HeaderText="Действие">
+            <div @onclick:stopPropagation="true">
+                <Button class="btn btn-sm btn-outline-primary me-2" title="Редактировать" @onclick=@(() => OnEditClick(context))>
+                    <Icon Name="IconName.Pencil" />
+                </Button>
+
+                <Button class="btn btn-sm btn-outline-danger" title="Удалить" @onclick=@(() => OnDeleteClick(context))>
+                    <Icon Name="IconName.Trash" />
+                </Button>
+            </div>
+        </GridColumn>
+
+    </GridColumns>
+
+</Grid>
+
+@if (isShowLoadMoreButton)
+{
+    <div class="d-flex justify-content-center my-4">
+        <Button @onclick=@OnLoadMoreClick
+                class="btn btn-outline-primary btn-lg px-5">
+            Показать еще
+        </Button>
+    </div>
+}
+
+
+@code {
+    [Inject]
+    protected IDeviceTypeService deviceTypeSevice { get; set; } = default!;
+
+    public Grid<TableItem> grid = default!;
+
+    private bool isShowLoadMoreButton = true;
+
+    [Parameter, EditorRequired]
+    public List<TableItem> Items { get; set; } = new List<TableItem>();
+
+    [Parameter, EditorRequired]
+    public EventCallback LoadMoreItems { get; set; }
+
+    [Parameter]
+    public EventCallback<TableItem> OnItemClick { get; set; }
+
+    [Parameter]
+    public EventCallback<TableItem> OnItemDelete { get; set; }
+
+    [Parameter]
+    public EventCallback<TableItem> OnItemUpdate { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Items.Count == 0)
+            isShowLoadMoreButton = false;
+
+        base.OnParametersSet();
+    }
+
+    private async Task<GridDataProviderResult<TableItem>> ItemsDataProvider(GridDataProviderRequest<TableItem> request)
+    {
+        return new GridDataProviderResult<TableItem>
+        {
+            Data = Items,
+            TotalCount = Items.Count()
+        };
+    }
+
+    private async Task OnRowClick(GridRowEventArgs<TableItem> args)
+    {
+        await OnItemClick.InvokeAsync(args.Item);
+    }
+
+    private async Task OnEditClick(TableItem item)
+    {
+        await OnItemUpdate.InvokeAsync(item);
+    }
+
+    private async Task OnDeleteClick(TableItem item)
+    {
+        await OnItemDelete.InvokeAsync(item);
+    }
+
+    private async Task OnLoadMoreClick()
+    {
+        isShowLoadMoreButton = false;
+        var currentCount = Items.Count;
+        await LoadMoreItems.InvokeAsync();
+        if (currentCount != Items.Count)
+        {
+            await grid.RefreshDataAsync();
+            isShowLoadMoreButton = true;
+        }
+    }
+}

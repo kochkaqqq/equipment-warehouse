@@ -1,0 +1,311 @@
+﻿@using Domain.Entities
+@using Domain.Filters
+@using Microsoft.AspNetCore.SignalR.Client
+@using Presentation.Components.UI.NomenclaturePage.ModalWindowContentComponents
+@using Presentation.Components.UI.Shared.ModalWindows
+@using Presentation.Utils.Enums
+@using Presentation.Utils.Services.NomenclatureService
+
+<Modal @ref=@modal IsVerticallyCentered=true IsScrollable=true />
+
+<Grid TItem="Nomenclature"
+      @ref=@grid
+      AllowRowClick="true"
+      Class="table table-hover table-bordered table-striped"
+      HeaderRowCssClass="bg-primary text-white border-bottom-0"
+      OnRowClick="OnRowClick"
+      DataProvider="ItemsDataProvider"
+      Responsive="true"
+      Unit="Unit.Px"
+      RowKeySelector="item => item.Id">
+
+      <GridColumns>
+
+          <GridColumn TItem="Nomenclature" HeaderText="Фото">
+              <Image Src="@context.DeviceImage.Url" Style="width: 75px; height: 50px;" Class="rounded mx-auto d-block" Alt="@context.DeviceImage.Caption" />
+          </GridColumn>
+
+          <GridColumn TItem="Nomenclature" HeaderText="Тип">
+              @context.DeviceType.Name.Value
+          </GridColumn>
+
+          <GridColumn TItem="Nomenclature" HeaderText="Производитель">
+              @context.Manufacturer.Name.Value
+          </GridColumn>
+
+          <GridColumn TItem="Nomenclature" HeaderText="Модель">
+              @context.ModelName.Value
+          </GridColumn>
+
+          <GridColumn TItem="Nomenclature" HeaderText="Страна">
+              @context.Country.Name.Value
+          </GridColumn>
+
+          <GridColumn TItem="Nomenclature" HeaderText="Цена">
+              @context.Price.Value
+          </GridColumn>
+
+          <GridColumn TItem="Nomenclature" HeaderText="Действие">
+            <div @onclick:stopPropagation="true">
+                <Button class="btn btn-sm btn-outline-primary me-2" title="Редактировать" @onclick=@(() => OnEditClick(context))>
+                    <Icon Name="IconName.Pencil" />
+                </Button>
+
+                <Button class="btn btn-sm btn-outline-danger" title="Удалить" @onclick=@(() => OnDeleteClick(context))>
+                    <Icon Name="IconName.Trash" />
+                </Button>
+            </div>
+          </GridColumn>
+
+      </GridColumns>
+
+</Grid>
+
+@if (isShowLoadMoreButton)
+{
+    <div class="d-flex justify-content-center my-4">
+        <Button @onclick=@OnLoadMoreClick
+                class="btn btn-outline-primary btn-lg px-5">
+            Показать еще
+        </Button>
+    </div>
+}
+
+@code {
+    private HubConnection? hubConnection;
+    private string connectionState = "Disconnected";
+
+    private Grid<Nomenclature> grid = default!;
+
+    private Modal modal = default!;
+
+    private HashSet<Nomenclature> Nomenclatures { get; set; } = new();
+
+    [Inject]
+    public INomenclatureService nomenclatureService { get; set; } = null!;
+    [Inject]
+    public NavigationManager Navigation { get; set; } = null!;
+    [Inject]
+    public ToastService ToastService { get; set; } = null!;
+
+    private int currentPage = 0;
+
+    private NomenclatureFilter filter { get; set; } = new();
+
+    private bool isShowLoadMoreButton = true;
+
+    private async Task<GridDataProviderResult<Nomenclature>> ItemsDataProvider(GridDataProviderRequest<Nomenclature> request)
+    {
+        return new()
+        {
+            Data = Nomenclatures,
+            TotalCount = Nomenclatures.Count
+        };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nomenclatures = new HashSet<Nomenclature>(await nomenclatureService.GetNomenclaturesAsync(0, new()));
+        await grid.RefreshDataAsync();
+        await InitializeSignalR();
+    }
+
+    private async Task InitializeSignalR()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/nomenclature-hub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<string, Guid, Nomenclature?>("CollectionChanged", async (action, id, item) =>
+        {
+            switch (action)
+            {
+                case "create":
+                    if (item is Nomenclature newNomenclature)
+                        Nomenclatures.Add(newNomenclature);
+                    break;
+                case "delete":
+                    var removingItem = Nomenclatures.FirstOrDefault(n => n.Id == id);
+                    if (removingItem != null)
+                        Nomenclatures.Remove(removingItem);
+                    break;
+                case "update":
+                    if (item is Nomenclature nomenclature)
+                    {
+                        var updatedItem = Nomenclatures.FirstOrDefault(n => n.Id == nomenclature.Id);
+                        if (updatedItem != null)
+                        {
+                            updatedItem.DeviceImage = nomenclature.DeviceImage;
+                            updatedItem.Country = nomenclature.Country;
+                            updatedItem.Manufacturer = nomenclature.Manufacturer;
+                            updatedItem.DeviceType = nomenclature.DeviceType;
+                            updatedItem.ModelName = nomenclature.ModelName;
+                            updatedItem.Price = nomenclature.Price;
+                        }
+                    }
+                    break;
+            }
+
+            StateHasChanged();
+            await grid.RefreshDataAsync();
+        });
+
+        try
+        {
+            await hubConnection.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            ToastService.Notify(new(ToastType.Warning, "Не удалось установить соединение с сервером"));
+        }
+    }
+
+    #region button click methods
+
+    private async Task OnRowClick(GridRowEventArgs<Nomenclature> args)
+    {
+        await ShowNomenclatureEntityModalWindow(args.Item, FormModeEnum.ViewOnly);
+    }
+
+    private async Task OnEditClick(Nomenclature nomenclature)
+    {
+        await ShowNomenclatureEntityModalWindow(nomenclature, FormModeEnum.Edit);
+    }
+
+    private async Task OnDeleteClick(Nomenclature nomenclature)
+    {
+        var parameters = new Dictionary<string, object>();
+        parameters.Add("EntityId", nomenclature.Id);
+        parameters.Add("HideModal", EventCallback.Factory.Create(this, async () => await modal.HideAsync()));
+        parameters.Add("DeleteMethod", EventCallback.Factory.Create<Guid>(this, DeleteNomenclature));
+
+        modal.Size = ModalSize.Small;
+        await modal.ShowAsync<DeleteEntity>($"Удалить {nomenclature.ModelName.Value}?", parameters: parameters);
+    }
+
+    private async Task ShowNomenclatureEntityModalWindow(Nomenclature? nomenclature, FormModeEnum mode)
+    {
+        var parameters = new Dictionary<string, object>();
+        if (nomenclature != null)
+            parameters.Add("Nomenclature", nomenclature);
+        parameters.Add("Mode", mode);
+        parameters.Add("HideContent", EventCallback.Factory.Create(this, async () => await modal.HideAsync()));
+        if (mode == FormModeEnum.Create)
+            parameters.Add("OnActionButtonClick", EventCallback.Factory.Create<Nomenclature>(this, CreateNomenclature));
+        else
+            parameters.Add("OnActionButtonClick", EventCallback.Factory.Create<Nomenclature>(this, UpdateNomenclature));
+        modal.Size = ModalSize.Large;
+
+        string title;
+        if (mode == FormModeEnum.Create)
+            title = "Новая позиция";
+        else
+            title = nomenclature.ModelName.Value;
+
+        await modal.ShowAsync<EntityWindow>(title: title, parameters: parameters);
+    }
+
+    #endregion
+
+    #region public methods
+
+    public async Task OnFilterClick()
+    {
+        var parameters = new Dictionary<string, object>();
+        parameters.Add("HideModal", EventCallback.Factory.Create(this, async () => await modal.HideAsync()));
+        parameters.Add("ApplyFilter", EventCallback.Factory.Create(this, ApplyFilter));
+        parameters.Add("Filter", filter);
+        modal.Size = ModalSize.Large;
+        await modal.ShowAsync<FilterWindow>(title: "Фильтры", parameters: parameters);
+    }
+
+    public async Task OnCreateClick()
+    {
+        await ShowNomenclatureEntityModalWindow(default, FormModeEnum.Create);
+    }
+
+    public async Task DoSearch(string? searchValue)
+    {
+        filter.SearchText = searchValue;
+        await ApplyFilter();
+    }
+
+    #endregion
+
+    #region db commands
+
+    private async Task OnLoadMoreClick()
+    {
+        isShowLoadMoreButton = false;
+        var currentCount = Nomenclatures.Count;
+        foreach (var item in await nomenclatureService.GetNomenclaturesAsync(currentPage + 1, filter))
+        {
+            Nomenclatures.Add(item);
+        }
+        
+        if (Nomenclatures.Count > currentCount)
+        {
+            await grid.RefreshDataAsync();
+            isShowLoadMoreButton = true;
+        }
+    }
+
+    private async Task CreateNomenclature(Nomenclature nomenclature)
+    {
+        var id = await nomenclatureService.CreateAsync(nomenclature);
+        if (id != default)
+        {
+            nomenclature.Id = id;
+            Nomenclatures.Add(nomenclature);
+            await grid.RefreshDataAsync();
+            await modal.HideAsync();
+        }
+    }
+
+    private async Task UpdateNomenclature(Nomenclature nomenclature)
+    {
+        if (await nomenclatureService.UpdateAsync(nomenclature))
+        {
+            var updatedNomenclature = Nomenclatures.FirstOrDefault(n => n.Id == nomenclature.Id);
+            if (updatedNomenclature != null)
+            {
+                updatedNomenclature.DeviceImage = nomenclature.DeviceImage;
+                updatedNomenclature.DeviceType = nomenclature.DeviceType;
+                updatedNomenclature.Manufacturer = nomenclature.Manufacturer;
+                updatedNomenclature.ModelName = nomenclature.ModelName;
+                updatedNomenclature.Country = nomenclature.Country;
+                updatedNomenclature.Price = nomenclature.Price;
+
+                await grid.RefreshDataAsync();
+                StateHasChanged();
+                await modal.HideAsync();
+            }
+        }
+    }
+
+    private async Task DeleteNomenclature(Guid id)
+    {
+        if (await nomenclatureService.DeleteAsync(id))
+        {
+            var removingNomenclature = Nomenclatures.FirstOrDefault(n => n.Id == id);
+            if (removingNomenclature != null)
+            {
+                Nomenclatures.Remove(removingNomenclature);
+                await grid.RefreshDataAsync();
+                StateHasChanged();
+            }
+            await modal.HideAsync();
+        }
+    }
+
+    private async Task ApplyFilter()
+    {
+        Nomenclatures = new HashSet<Nomenclature>(await nomenclatureService.GetNomenclaturesAsync(0, filter));
+        currentPage = 0;
+        await grid.RefreshDataAsync();
+        StateHasChanged();
+    }
+
+    #endregion
+}

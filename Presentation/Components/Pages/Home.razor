@@ -1,0 +1,81 @@
+﻿@page "/"
+@using Domain.Entities
+@using Presentation.Components.UI.Handbook.HandbookDataTable
+@using Presentation.Utils.ApiClient
+@using Presentation.Utils.Services.DeviceTypes
+@using Presentation.Components.UI.Handbook.DeviceTypes
+@using Presentation.Components.UI.Handbook.Manufacrurers
+
+<PageTitle>Home</PageTitle>
+
+<div class="mb-3">
+    <div class="input-group">
+        <TextInput @bind-Value="searchValue"
+                   class="form-control"
+                   placeholder="Введите текст для поиска..." />
+
+        <Button class="btn btn-primary ms-2" @onclick=@SearchButtonClick>
+            <Icon Name="IconName.Search" /> Поиск
+        </Button>
+
+        <Button class="btn btn-success ms-2" @onclick=@CreateButtonClick>
+            <Icon Name="IconName.Plus" /> Создать
+        </Button>
+    </div>
+</div>
+
+<Tabs @ref=@tabs EnableFadeEffect=true>
+
+    <Tab Name="1">
+        <TitleTemplate>
+            <Icon Name="IconName.Camera" /> Типы устройств
+        </TitleTemplate>
+
+        <Content>
+            <DeviceTypesComponent @ref=@deviceTypesComponent />
+        </Content>
+    </Tab>
+
+    <Tab Name="2">
+        <TitleTemplate>
+            <Icon Name="IconName.BriefcaseFill" /> Производители
+        </TitleTemplate>
+
+        <Content>
+            <ManufacturersComponent @ref=@manufacturersComponent />
+        </Content>
+    </Tab>
+
+</Tabs>
+
+@code {
+    private Tabs tabs = default!;
+
+    private DeviceTypesComponent deviceTypesComponent = default!;
+    private ManufacturersComponent manufacturersComponent = default!;
+
+    private async Task CreateButtonClick()
+    {
+        var currentTabName = tabs.GetActiveTab().Name;
+
+        if (currentTabName == "1")
+            await deviceTypesComponent.ShowCreateModal();
+        else if (currentTabName == "2")
+            await manufacturersComponent.ShowCreateModal();            
+    }
+
+    private async Task SearchButtonClick()
+    {
+        if (!string.IsNullOrWhiteSpace(searchValue))
+        {
+            var currentTabName = tabs.GetActiveTab().Name;
+
+            if (currentTabName == "1")
+                await deviceTypesComponent.ApplySearch(searchValue);
+            else if (currentTabName == "2")
+                await manufacturersComponent.ApplySearch(searchValue);
+        }
+    }
+
+    private string? searchValue = null;
+}

@@ -1,0 +1,140 @@
+﻿@using Domain.Entities
+@using Domain.Shared
+@using Domain.ValueObjects.Handbook
+@using Presentation.Utils.Enums
+@using Presentation.Utils.HelpFunc
+
+<div class="form-group row mb-3">
+    <label class="col-md-2 col-form-label">Название: </label>
+    <div class="col-md-10">
+        <TextInput Disabled="@isReadOnly" @bind-Value="@entityName" Placeholder="Название..." />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <label class="col-md-2 col-form-label">Описание: </label>
+    <div class="col-md-10">
+        <TextInput Disabled="@isReadOnly" @bind-Value="@entityDescription" Placeholder="Описание..." />
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12 text-right">
+        <Button Type="ButtonType.Button" Color="ButtonColor.Secondary" Class="float-end" @onclick="ResetForm">
+            @GetCaptionsByEnum.GetResetButtonCaption(Mode)
+        </Button>
+
+        <Button Type="ButtonType.Submit" Color="ButtonColor.Success" Class="float-end me-2" @onclick=@DoAction>
+            @GetCaptionsByEnum.GetActionButtonCaption(Mode)
+        </Button>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public FormModeEnum Mode { get; set; } = FormModeEnum.ViewOnly;
+    [Parameter]
+    public EventCallback HideModal { get; set; }
+    [Parameter]
+    public EventCallback<Guid> Delete { get; set; }
+    [Parameter]
+    public EventCallback<(Guid, string, string)> ApplyCommand { get; set; }
+    [Parameter]
+    public HandbookEntity Entity { get; set; } = null!;
+
+    [Inject]
+    private ToastService toastService { get; set; } = null!;
+
+    protected override void OnParametersSet()
+    {
+        ResetInputValues();
+        base.OnParametersSet();
+    }
+
+    private string entityName;
+    private string entityDescription;
+
+    private bool isReadOnly;
+
+    protected override void OnInitialized()
+    {
+        entityName = Entity.Name.Value;
+        if (Entity.Description != null)
+            entityDescription = Entity.Description.Value;
+        else
+            entityDescription = string.Empty;
+
+        isReadOnly = Mode == FormModeEnum.ViewOnly;
+
+        base.OnInitialized();
+    }
+
+    private async Task ResetForm()
+    {
+        switch (Mode)
+        {
+            case FormModeEnum.ViewOnly:
+                await HideModal.InvokeAsync();
+                break;
+            case FormModeEnum.Edit:
+                ResetInputValues();
+                Mode = FormModeEnum.ViewOnly;
+                isReadOnly = true;
+                break;
+            case FormModeEnum.Create:
+                ResetInputValues();
+                break;
+            default:
+                break;
+        }
+    }
+
+    private async Task DoAction()
+    {
+        if (Mode == FormModeEnum.ViewOnly)
+        {
+            TurnEditMode();
+        }
+        else
+        {
+            await SendCommand();
+        }
+    }
+
+    private async Task SendCommand()
+    {
+        if (!Name.IsValid(entityName))
+        {
+            toastService.Notify(new(ToastType.Danger, Name.ValidationErrorMessage));
+            return;
+        }
+
+        if (!Description.IsValid(entityDescription))
+        {
+            toastService.Notify(new(ToastType.Danger, Description.ValidationErrorMessage));
+            return;
+        }
+
+        await ApplyCommand.InvokeAsync((Entity.Id, entityName, entityDescription));
+    }
+
+    private void TurnEditMode()
+    {
+        Mode = FormModeEnum.Edit;
+        isReadOnly = false;
+        StateHasChanged();
+    }
+
+    public void ResetInputValues()
+    {
+        entityName = Entity.Name.Value;
+        if (Entity.Description != null)
+            entityDescription = Entity.Description.Value;
+        else
+            entityDescription = string.Empty;
+
+        isReadOnly = Mode == FormModeEnum.ViewOnly;
+
+        StateHasChanged();
+    }
+}

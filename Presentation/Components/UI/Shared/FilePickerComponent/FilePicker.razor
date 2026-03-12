@@ -1,0 +1,16 @@
+﻿@if (Path == null)
+{
+    
+}
+else
+{
+    
+}
+
+
+@code {
+    [Parameter]
+    public string? Path { get; set; } = null;
+    [Parameter]
+    public EventCallback<string> OnPhotoPick { get; set; }
+}

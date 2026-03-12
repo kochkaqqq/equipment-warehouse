@@ -1,0 +1,181 @@
+﻿@using Domain.Entities
+@using Domain.Filters
+@using Presentation.Components.UI.Handbook.ModalWondowComponents
+@using Presentation.Components.UI.Shared.ModalWindows
+@using Presentation.Utils.Enums
+@using Presentation.Utils.Services.Manufacturer
+@using Presentation.Components.UI.Handbook.HandbookDataTable
+@using Domain.ValueObjects.Handbook
+
+@if (isLoading)
+{
+    
+}
+else
+{
+    <Modal @ref=@modal IsVerticallyCentered=true />
+
+    <DataTableView @ref=@table Items=@(manufacturers.Select(m => new TableItem(m)).ToList()) LoadMoreItems=@LoadMoreManufacturers
+        OnItemClick=@OnManufacturerRowClick OnItemDelete=@OnManufacturerDeleteButtonClick OnItemUpdate=@OnManufacturerUpdateButtonClick />
+}
+
+@code {
+    private bool isLoading = true;
+
+    [Inject]
+    private IManufacturerService manufacturerService { get; set; } = null!;
+
+    private DataTableView table = default!;
+
+    private Modal modal = default!;
+
+    private int currentPage = 0;
+
+    private ManufacturerFilter filter = new();
+
+    private List<Manufacturer> manufacturers = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        manufacturers = await manufacturerService.GetManufacturersAsync(0, new());
+        isLoading = false;
+    }
+
+    #region buttons click methods
+
+    private async Task LoadMoreManufacturers()
+    {
+        var nextManufacturers = await manufacturerService.GetManufacturersAsync(currentPage + 1, filter);
+        if (nextManufacturers.Count > 0)
+        {
+            currentPage++;
+            manufacturers.AddRange(nextManufacturers);
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnManufacturerRowClick(TableItem tableItem)
+    {
+        await ShowManufacturerModalWindow(tableItem, FormModeEnum.ViewOnly);
+    }
+
+    private async Task OnManufacturerDeleteButtonClick(TableItem tableItem)
+    {
+        var parameters = new Dictionary<string, object>();
+        parameters.Add("EntityId", tableItem.Id);
+        parameters.Add("DeleteMethod", EventCallback.Factory.Create<Guid>(this, DeleteManufacturer));
+        parameters.Add("HideModal", EventCallback.Factory.Create(this, async () => await modal.HideAsync()));
+
+        modal.Size = ModalSize.Small;
+        await modal.ShowAsync<DeleteEntity>(title: $"Удалить {tableItem.Name.Value}?", parameters: parameters);
+    }
+
+    private async Task OnManufacturerUpdateButtonClick(TableItem tableItem)
+    {
+        await ShowManufacturerModalWindow(tableItem, FormModeEnum.Edit);
+    }
+
+    private async Task ShowManufacturerModalWindow(TableItem tableItem, FormModeEnum mode)
+    {
+        Manufacturer manufacturer;
+
+        if (tableItem != null)
+        {
+            manufacturer = new()
+            {
+                Id = tableItem.Id,
+                Name = tableItem.Name,
+                Description = tableItem.Description,
+                CreatedAt = tableItem.CreatedAt,
+                UpdatedAt = tableItem.UpdatedAt
+            };
+        }
+        else
+        {
+            manufacturer = new()
+            {
+                Id = default,
+                Name = new Name("Новый производитель")
+            };
+        }
+
+        var parameters = new Dictionary<string, object>();
+        parameters.Add("Mode", mode);
+        parameters.Add("HideModal", EventCallback.Factory.Create(this, async () => await modal.HideAsync()));
+        parameters.Add("Delete", EventCallback.Factory.Create<Guid>(this, DeleteManufacturer));
+
+        if (mode == FormModeEnum.ViewOnly || mode == FormModeEnum.Edit)
+            parameters.Add("ApplyCommand", EventCallback.Factory.Create<(Guid, string, string)>(this, UpdateManufacturer));
+        else
+            parameters.Add("ApplyCommand", EventCallback.Factory.Create<(Guid, string, string)>(this, CreateManufacturer));
+
+        parameters.Add("Entity", manufacturer);
+
+        modal.Size = ModalSize.Large;
+        await modal.ShowAsync<HandbookEntityModalWindowContent>(title: $"{manufacturer.Name.Value}", parameters: parameters);
+    }
+
+    #endregion
+
+    #region commands to db
+
+    private async Task DeleteManufacturer(Guid id)
+    {
+        if (await manufacturerService.DeleteManufacturer(id))
+        {
+            var removingEntity = manufacturers.FirstOrDefault(m => m.Id == id);
+            if (removingEntity != null)
+            {
+                manufacturers.Remove(removingEntity);
+                StateHasChanged();
+                await table.grid.RefreshDataAsync();
+            }
+            await modal.HideAsync();
+        }
+    }
+
+    private async Task UpdateManufacturer((Guid, string, string) manufactureData)
+    {
+        if (await manufacturerService.UpdateManufacturer(manufactureData.Item1, manufactureData.Item2, manufactureData.Item3))
+        {
+            var updatedDeviceType = manufacturers.FirstOrDefault(dt => dt.Id == manufactureData.Item1);
+            if (updatedDeviceType != null)
+            {
+                updatedDeviceType.Name = new Name(manufactureData.Item2);
+                updatedDeviceType.Description = new Description(manufactureData.Item3);
+
+                StateHasChanged();
+                await table.grid.RefreshDataAsync();
+            }
+            await modal.HideAsync();
+        }
+    }
+
+    private async Task CreateManufacturer((Guid, string, string) manufactureData)
+    {
+        if (await manufacturerService.CreateManufacturer(manufactureData.Item2, manufactureData.Item3) != default)
+        {
+            await modal.HideAsync();
+        }
+    }
+
+    #endregion
+
+    #region public methods
+
+    public async Task ShowCreateModal()
+    {
+        await ShowManufacturerModalWindow(default, FormModeEnum.Create);
+    }
+
+    public async Task ApplySearch(string searchText)
+    {
+        filter.CommonSearchText = searchText;
+        currentPage = 0;
+        manufacturers = await manufacturerService.GetManufacturersAsync(0, filter);
+        StateHasChanged();
+        await table.grid.RefreshDataAsync();
+    }
+
+    #endregion
+}

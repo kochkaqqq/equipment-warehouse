@@ -1,0 +1,249 @@
+﻿@using Domain.Entities
+@using Domain.Filters
+@using Domain.Filters.CustomFilters
+@using Presentation.Components.UI.Shared.Selection
+@using Presentation.Utils.Services.Contries
+@using Presentation.Utils.Services.DeviceTypes
+@using Presentation.Utils.Services.Manufacturer
+
+<div class="form-group row mb-3">
+    <Icon Name="IconName.Trash" Class="col-md-1" @onclick=@(() => { selectedCountries = new(); countrySelection.ResetValue();}) style="cursor: pointer" />
+    <label class="col-md-3 col-form-label">Страна: </label>
+    <div class="col-md-8">
+        <Selection @ref=@countrySelection TItem="Country" Items=@countries IsMultiply=true 
+            DisplayItem=@(c => c.Name.Value) GetItemId=@(c => c.Id) Header="Выберите страны" OnItemSelect=@SelectCountry />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <Icon Name="IconName.Trash" Class="col-md-1" @onclick=@DeselectDeviceTypes style="cursor: pointer" />
+    <label class="col-md-3 col-form-label">Тип: </label>
+    <div class="col-md-8">
+        <Selection @ref=@deviceTypeSelection TItem="DeviceType" Items=@deviceTypes IsMultiply=true
+                   DisplayItem=@(d => d.Name.Value) GetItemId=@(d => d.Id) Header="Выберите типы" OnItemSelect=@SelectDeviceType />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <Icon Name="IconName.Trash" Class="col-md-1" @onclick=@DeselectManufacturers style="cursor: pointer" />
+    <label class="col-md-3 col-form-label">Производитель: </label>
+    <div class="col-md-8">
+        <Selection @ref=@manufacturerSelection TItem="Manufacturer" Items=@manufacturers IsMultiply=true
+                   DisplayItem=@(m => m.Name.Value) GetItemId=@(m => m.Id) Header="Выберите производителей" OnItemSelect=@SelectManufacturer />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <Icon Name="IconName.Trash" Class="col-md-1" style="cursor: pointer" @onclick=@(() => modelNameSearch = string.Empty) />
+    <label class="col-md-3 col-form-label">Модель: </label>
+    <div class="col-md-8">
+        <TextInput class="form-control" @bind-Value=@modelNameSearch Placeholder="Введите название модели" />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <Icon Name="IconName.Trash" Class="col-md-1" style="cursor: pointer" @onclick=@(() => {priceFrom = null; priceTo = null;}) />
+    <label class="col-md-3 col-form-label">Цена: </label>
+    <div class="col-md-8">
+        <div class="input-group">
+            <span class="input-group-text">От</span>
+            <InputNumber class="form-control" @bind-Value="priceFrom" min="0" step="100" placeholder="0" />
+            <span class="input-group-text">До</span>
+            <InputNumber class="form-control" @bind-Value="priceTo" min="0" step="100" placeholder="∞" />
+            <span class="input-group-text">₽</span>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex gap-2 mt-2">
+    <Button Class="w-50" Color="ButtonColor.Danger" @onclick=@OnClearButtonClick>
+        Сбросить
+    </Button>
+    <Button Class="w-50" Color="ButtonColor.Success" @onclick=@OnApplyButtonClick>
+        Применить
+    </Button>
+</div>
+
+@code {
+    [Parameter]
+    public NomenclatureFilter Filter { get; set; }
+
+    [Parameter]
+    public EventCallback HideModal { get; set; }
+    [Parameter]
+    public EventCallback ApplyFilter { get; set; }
+
+    [Inject]
+    private ToastService ToastService { get; set; } = null!;
+    [Inject]
+    private ICountryService CountryService { get; set; } = null!;
+    [Inject]
+    private IDeviceTypeService DeviceTypeService { get; set; } = null!;
+    [Inject]
+    private IManufacturerService ManufacturerService { get; set; } = null!;
+
+    private Selection<Country> countrySelection = default!;
+    private Selection<DeviceType> deviceTypeSelection = default!;
+    private Selection<Manufacturer> manufacturerSelection = default!;
+
+    private List<Country> countries = new();
+    private List<Country> selectedCountries = new();
+    private void SelectCountry(Guid id)
+    {
+        var country = countries.FirstOrDefault(c => c.Id == id);
+        if (country == null)
+        {
+            ToastService.Notify(new(ToastType.Danger, unexpectedError));
+            return;
+        }
+
+        var alreadySelectedCountry = selectedCountries.FirstOrDefault(c => c.Id == id);
+        if (alreadySelectedCountry != null)
+        {
+            selectedCountries.Remove(alreadySelectedCountry);
+        }
+        else
+        {
+            selectedCountries.Add(country);
+        }
+    }
+
+    private List<DeviceType> deviceTypes = new();
+    private List<DeviceType> selectedDeviceTypes = new();
+    private async Task SelectDeviceType(Guid id)
+    {
+        var deviceType = deviceTypes.FirstOrDefault(dt => dt.Id == id);
+        if (deviceType == null)
+        {
+            ToastService.Notify(new(ToastType.Danger, unexpectedError));
+            return;
+        }
+
+        var alreadySelectedDeviceType = selectedDeviceTypes.FirstOrDefault(dt => dt.Id == id);
+        if (alreadySelectedDeviceType != null)
+        {
+            selectedDeviceTypes.Remove(alreadySelectedDeviceType);
+        }
+        else
+        {
+            selectedDeviceTypes.Add(deviceType);
+        }
+
+        manufacturers = await ManufacturerService.GetManufacturersByDeviceTypesAsync(selectedDeviceTypes);
+        selectedManufacturers = selectedManufacturers.Where(m => manufacturers.Any(x => x.Id == m.Id)).ToList();
+    }
+
+    private List<Manufacturer> manufacturers = new();
+    private List<Manufacturer> selectedManufacturers = new();
+    private async Task SelectManufacturer(Guid id)
+    {
+        var manufacturer = manufacturers.FirstOrDefault(m => m.Id == id);
+        if (manufacturer == null)
+        {
+            ToastService.Notify(new(ToastType.Danger, unexpectedError));
+            return;
+        }
+
+        var alreadySelectedManufacturer = selectedManufacturers.FirstOrDefault(m => m.Id == id);
+        if (alreadySelectedManufacturer != null)
+        {
+            selectedManufacturers.Remove(alreadySelectedManufacturer);
+        }
+        else
+        {
+            selectedManufacturers.Add(manufacturer);
+        }
+
+        deviceTypes = await DeviceTypeService.GetDeviceTypesByManufactures(selectedManufacturers);
+        selectedDeviceTypes = selectedDeviceTypes.Where(dt => deviceTypes.Any(x => x.Id == dt.Id)).ToList();
+    }
+
+    private string? modelNameSearch = string.Empty;
+
+    private decimal? priceFrom = null;
+    private decimal? priceTo = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        countries = await CountryService.GetListAsync();
+        deviceTypes = await DeviceTypeService.GetDeviceTypesAsync();
+        manufacturers = await ManufacturerService.GetManufacturersAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Filter.CountryIds != null)
+            selectedCountries = countries.Where(c => Filter.CountryIds.Contains(c.Id)).ToList();
+
+        if (Filter.DeviceTypeIds != null)
+            selectedDeviceTypes = deviceTypes.Where(dt => Filter.DeviceTypeIds.Contains(dt.Id)).ToList();
+
+        if (Filter.ManufacturerIds != null)
+            selectedManufacturers = manufacturers.Where(m => Filter.ManufacturerIds.Contains(m.Id)).ToList();
+
+        if (Filter.SearchText != null)
+            modelNameSearch = Filter.SearchText;
+
+        if (Filter.PriceFilter != null)
+        {
+            priceFrom = Filter.PriceFilter.MinPrice;
+            priceTo = Filter.PriceFilter.MaxPrice;
+        }
+
+        manufacturers = await ManufacturerService.GetManufacturersByDeviceTypesAsync(selectedDeviceTypes);
+        deviceTypes = await DeviceTypeService.GetDeviceTypesByManufactures(selectedManufacturers);
+    }
+
+    private async Task DeselectDeviceTypes()
+    {
+        if (selectedDeviceTypes.Count == 0)
+            return;
+
+        selectedDeviceTypes = new();
+        deviceTypeSelection.ResetValue();
+        manufacturers = await ManufacturerService.GetManufacturersAsync();
+    }
+
+    private async Task DeselectManufacturers()
+    {
+        if (selectedManufacturers.Count == 0)
+            return;
+
+        selectedManufacturers = new();
+        manufacturerSelection.ResetValue();
+        deviceTypes = await DeviceTypeService.GetDeviceTypesAsync();
+        StateHasChanged();
+    }
+
+    private async Task OnClearButtonClick()
+    {
+        selectedCountries = new(); 
+        countrySelection.ResetValue();
+
+        await DeselectDeviceTypes();
+        await DeselectManufacturers();
+
+        modelNameSearch = string.Empty;
+
+        priceFrom = null;
+        priceTo = null;
+    }
+
+    private async Task OnApplyButtonClick()
+    {
+        Filter.CountryIds = selectedCountries.Select(c => c.Id).ToList();
+        Filter.ManufacturerIds = selectedManufacturers.Select(m => m.Id).ToList();
+        Filter.DeviceTypeIds = selectedDeviceTypes.Select(dt => dt.Id).ToList();
+        Filter.PriceFilter = new PriceFilter()
+        {
+            MinPrice = priceFrom,
+            MaxPrice = priceTo
+        };
+        Filter.SearchText = modelNameSearch;
+
+        await HideModal.InvokeAsync();
+        await ApplyFilter.InvokeAsync();
+    }
+
+    private static string unexpectedError = "Непредвиденная ошибка, попробуйте перезагрузить страницу";
+}

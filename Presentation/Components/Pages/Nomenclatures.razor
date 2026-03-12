@@ -1,0 +1,52 @@
+﻿@page "/nomenclatures"
+
+@using Domain.Entities
+@using Domain.Filters
+@using Presentation.Components.UI.NomenclaturePage
+@using Presentation.Components.UI.NomenclaturePage.ModalWindowContentComponents
+@using Presentation.Utils.Services.NomenclatureService
+
+<div class="mb-3">
+    <div class="input-group">
+        <TextInput @bind-Value="searchValue"
+                   class="form-control"
+                   placeholder="Введите текст для поиска..." />
+
+        <Button Color="ButtonColor.Primary" class="btn ms-2" @onclick=@SearchButtonClick>
+            <Icon Name="IconName.Search" /> Поиск
+        </Button>
+
+        <Button Color="ButtonColor.Success" class="btn ms-2" @onclick=@CreateButtonClick>
+            <Icon Name="IconName.Plus" /> Создать
+        </Button>
+
+        <Button class="btn ms-2" Color="ButtonColor.Info" @onclick=@ShowFilterButtonClick>
+            <Icon Name="IconName.Filter" /> Фильтры
+        </Button>
+    </div>
+
+    <NomenclatureTable @ref=@table />
+</div>
+
+@code {
+    private string? searchValue = null;
+    private NomenclatureTable table = default!;
+
+    [Inject]
+    public INomenclatureService NomenclatureService { get; set; } = null!;
+
+    private async Task SearchButtonClick()
+    {
+        await table.DoSearch(searchValue);
+    }
+
+    private async Task CreateButtonClick()
+    {
+        await table.OnCreateClick();
+    }
+
+    private async Task ShowFilterButtonClick()
+    {
+        await table.OnFilterClick();
+    }
+}

@@ -1,0 +1,101 @@
+﻿<div class="d-grid gap-2 mt-2">
+    <TextInput @bind-Value="searchText"
+               class="form-control"
+               placeholder="Поиск..." 
+               @oninput="FilterItems" />
+    @if (IsShowNewEntityButton)
+    {
+        <Accordion>
+            <AccordionItem>
+                <TitleTemplate>
+                    <Button Class="mt-2" Color="ButtonColor.Primary"> <Icon Name="IconName.Plus" /> Добавить </Button>
+                </TitleTemplate>
+
+                <Content>
+                    <TextInput @bind-Value="newEntityTitle" class="form-control" placeholder="Введите..." />
+                    <Button Class="mt-2" Color="ButtonColor.Success" @onclick=AddNewEntity>Ок</Button>
+                </Content>
+            </AccordionItem>
+        </Accordion>
+    }
+
+    <div class="mb-2" style="overflow-y: auto; max-height: 300px;">
+        <ul class="list-group mt-2">
+            @foreach (var item in filtredItems)
+            {
+                <li class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                    style="cursor: pointer" @onclick=@(async () => await OnItemSelect.InvokeAsync(item))>
+                    @item.DisplayName
+                    @if (SelectedItems.FirstOrDefault(i => i.Id == item.Id) != null)
+                    {
+                        <Icon Name="IconName.Check" />
+                    }
+                </li>
+            }
+        </ul>
+    </div>
+
+    @if (IsMultiply)
+    {
+        <div class="d-flex gap-2 mt-2">
+            <Button Class="w-50" Color="ButtonColor.Danger" @onclick=@OnClearButtonClick>
+                Очистить
+            </Button>
+            <Button Class="w-50" Color="ButtonColor.Success" @onclick=@OnApplyButtonClick>
+                Выбрать
+            </Button>
+        </div>
+    }
+</div>
+
+@code {
+    private string searchText = string.Empty;
+
+    private string newEntityTitle = string.Empty;
+
+    [Parameter]
+    public List<SelectionItem> Items { get; set; } = new();
+
+    [Parameter]
+    public EventCallback<SelectionItem> OnItemSelect { get; set; }
+
+    [Parameter]
+    public bool IsMultiply { get; set; } = false;
+
+    [Parameter]
+    public List<SelectionItem> SelectedItems { get; set; } = new();
+
+    [Parameter]
+    public EventCallback OnClearButtonClick { get; set; }
+
+    [Parameter]
+    public EventCallback OnApplyButtonClick { get; set; }
+
+    [Parameter]
+    public bool IsShowNewEntityButton { get; set; } = false;
+
+    [Parameter]
+    public EventCallback<string> OnNewEntityButtonClick { get; set; }
+
+    private List<SelectionItem> filtredItems = new();
+
+    protected override void OnParametersSet()
+    {
+        filtredItems = new(Items);
+        searchText = string.Empty;
+        base.OnParametersSet();
+    }
+
+    private void FilterItems(ChangeEventArgs e)
+    {
+        searchText = e.Value?.ToString() ?? string.Empty;
+        filtredItems = string.IsNullOrWhiteSpace(searchText)
+            ? new(Items)
+            : Items.Where(i => i.DisplayName.ToLower().Contains(searchText.ToLower(), StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private async Task AddNewEntity()
+    {
+        await OnNewEntityButtonClick.InvokeAsync(newEntityTitle);
+    }
+}

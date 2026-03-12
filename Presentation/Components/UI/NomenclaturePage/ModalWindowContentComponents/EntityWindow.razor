@@ -1,0 +1,328 @@
+﻿@using Domain.Entities
+@using Domain.ValueObjects.Country
+@using Domain.ValueObjects.Nomenclature
+@using Presentation.Utils.Enums
+@using Presentation.Components.UI.Shared.Selection
+@using Presentation.Utils.HelpFunc
+@using Presentation.Utils.Services.Contries
+@using Presentation.Utils.Services.DeviceTypes
+@using Presentation.Utils.Services.Manufacturer
+@using Presentation.Utils.Services.S3Service
+
+@if (photoPath != null)
+{
+    <Image Src="@photoPath" 
+        Style="width: 300px; height: 200px;"
+        Class="rounded mx-auto d-block mb-3" Alt="placeholder" />
+}
+
+<div class="form-group row mb-3">
+    <label class="col-md-2 col-form-label">Картинка: </label>
+    <div class="col-md-10">
+        <InputFile Disabled=@(Mode == FormModeEnum.ViewOnly) class="form-control" OnChange=@LoadFile accept="image/*" />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <label class="col-md-2 col-form-label">Страна: </label>
+    <div class="col-md-10">
+        <Selection @ref=@countrySelection Disabled=@(Mode == FormModeEnum.ViewOnly) TItem="Country" Items="Countries" DisplayItem="c => c.Name.Value" GetItemId="c => c.Id"
+                   OnItemSelect="id => selectedCountry = Countries.FirstOrDefault(c => c.Id == id)" Header="Выберите страну" 
+                   SelectedItemId=@(selectedCountry == null ? null : selectedCountry.Id) IsShowNewEntityButton=true OnNewEntityButtonClick=@CreateCountry />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <label class="col-md-2 col-form-label">Тип техники: </label>
+    <div class="col-md-10">
+        <Selection @ref=@deviceTypeSelection Disabled=@(Mode == FormModeEnum.ViewOnly) TItem="DeviceType" Items="DeviceTypes" DisplayItem="c => c.Name.Value" GetItemId="c => c.Id"
+                   OnItemSelect="id => selectedDeviceType = DeviceTypes.FirstOrDefault(dt => dt.Id == id)" Header="Выберите тип техники" 
+                   SelectedItemId=@(selectedDeviceType == null ? null : selectedDeviceType.Id) />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <label class="col-md-2 col-form-label">Производитель: </label>
+    <div class="col-md-10">
+        <Selection @ref=@manufacturerSelection Disabled=@(Mode == FormModeEnum.ViewOnly) TItem="Manufacturer" Items="Manufacturers" DisplayItem="c => c.Name.Value" GetItemId="c => c.Id"
+                   OnItemSelect="id => selectedManufacturer = Manufacturers.FirstOrDefault(m => m.Id == id)" Header="Выберите производителя" 
+                   SelectedItemId=@(selectedManufacturer == null ? null : selectedManufacturer.Id) />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <label class="col-md-2 col-form-label">Модель: </label>
+    <div class="col-md-10">
+        <TextInput Disabled=@(Mode == FormModeEnum.ViewOnly) class="form-control" @bind-Value=@modelName Placeholder="Введите модель..."  />
+    </div>
+</div>
+
+<div class="form-group row mb-3">
+    <label class="col-md-2 col-form-label">Цена: </label>
+    <div class="col-md-10">
+        <InputNumber class="form-control" @bind-Value=@price
+                     placeholder="Введите цену..."
+                     Disabled=@(Mode == FormModeEnum.ViewOnly)
+                     min="0" step="100" />
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12 text-right">
+        <Button Type="ButtonType.Button" Color="ButtonColor.Secondary" Class="float-end" @onclick="ResetForm">
+            @GetCaptionsByEnum.GetResetButtonCaption(Mode)
+        </Button>
+
+        <Button Type="ButtonType.Submit" Color="ButtonColor.Success" Class="float-end me-2" @onclick=@DoAction>
+            @GetCaptionsByEnum.GetActionButtonCaption(Mode)
+        </Button>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public Nomenclature? Nomenclature { get; set; }
+    [Parameter]
+    public FormModeEnum Mode { get; set; } = FormModeEnum.ViewOnly;
+    [Parameter]
+    public EventCallback HideContent { get; set; }
+    [Parameter]
+    public EventCallback<Nomenclature> OnActionButtonClick { get; set; }
+
+    private List<DeviceType> DeviceTypes { get; set; } = new();
+    private List<Manufacturer> Manufacturers { get; set; } = new();
+    private List<Country> Countries { get; set; } = new();
+
+    private Selection<Country> countrySelection = default!;
+    private Selection<DeviceType> deviceTypeSelection = default!;
+    private Selection<Manufacturer> manufacturerSelection = default!;
+
+    [Inject]
+    private ICountryService countryService { get; set; } = null!;
+    [Inject]
+    public IDeviceTypeService deviceTypeService { get; set; } = null!;
+    [Inject]
+    public IManufacturerService manufacturerService { get; set; } = null!;
+    [Inject]
+    public ToastService ToastService { get; set; } = null!;
+    [Inject]
+    public IS3Service S3Service { get; set; } = null!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Countries = await countryService.GetListAsync();
+        DeviceTypes = await deviceTypeService.GetDeviceTypesAsync();
+        Manufacturers = await manufacturerService.GetManufacturersAsync();
+
+        if (Nomenclature != null && Mode != FormModeEnum.Create)
+        {
+            SetStartValues();
+        }
+        else
+        {
+            SetEmptyValues();
+        }
+    }
+
+    private bool isPhotoChanged = false;
+    private string? photoPath = null;
+    private byte[]? photoSource = null;
+
+    private async Task LoadFile(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        using var stream = file.OpenReadStream();
+        using var ms = new MemoryStream();
+
+        await stream.CopyToAsync(ms);
+
+        isPhotoChanged = true;
+
+        photoSource = ms.ToArray();
+        photoPath = $"data:{file.ContentType};base64,{Convert.ToBase64String(photoSource)}";
+        StateHasChanged();
+    }
+
+    private Country? selectedCountry = default;
+    private DeviceType? selectedDeviceType = default;
+    private Manufacturer? selectedManufacturer = default;
+
+    private string modelName = string.Empty;
+    private decimal? price = null;
+
+    private async Task ResetForm()
+    {
+        if (Mode == FormModeEnum.Create)
+        {
+            SetEmptyValues();
+        }
+        else if (Mode == FormModeEnum.Edit)
+        {
+            SetStartValues();
+            Mode = FormModeEnum.ViewOnly;
+            StateHasChanged();
+        }
+        else
+        {
+            await HideContent.InvokeAsync();
+        }
+    }
+
+    private async Task DoAction()
+    {
+        if (Mode == FormModeEnum.ViewOnly)
+        {
+            Mode = FormModeEnum.Edit;
+            StateHasChanged();
+        }
+        else
+        {
+            if (!IsValidTextInputs())
+                return;
+
+            if (!IsValidSelectionInputs())
+                return;
+
+            string photoUrl;
+
+            if (!isPhotoChanged && Mode == FormModeEnum.Edit && Nomenclature != null)
+            {
+                photoUrl = Nomenclature.DeviceImage.Url;
+            }
+            else
+            {
+                photoUrl = await SavePhotoToStorage();
+                if (string.IsNullOrEmpty(photoUrl))
+                {
+                    ToastService.Notify(new(ToastType.Danger, "Не удалось сохранить фото"));
+                    return;
+                }
+            }
+
+            await OnActionButtonClick.InvokeAsync(InitializeNomenclature(photoUrl));
+        }
+    }
+
+    private void SetStartValues()
+    {
+        if (Nomenclature == null)
+            throw new Exception();
+
+        selectedCountry = Countries.FirstOrDefault(c => c.Id == Nomenclature.Country.Id);
+        selectedDeviceType = DeviceTypes.FirstOrDefault(dt => dt.Id == Nomenclature.DeviceType.Id);
+        selectedManufacturer = Manufacturers.FirstOrDefault(m => m.Id == Nomenclature.Manufacturer.Id);
+
+        photoPath = Nomenclature.DeviceImage.Url;
+
+        modelName = Nomenclature.ModelName.Value;
+        price = Nomenclature.Price.Value;
+    }
+
+    private void SetEmptyValues()
+    {
+        selectedCountry = default;
+        selectedDeviceType = default;
+        selectedManufacturer = default;
+
+        manufacturerSelection.ResetValue();
+        deviceTypeSelection.ResetValue();
+        countrySelection.ResetValue();
+
+        modelName = string.Empty;
+        price = null;
+
+        photoPath = null;
+        photoSource = new byte[] { };
+    }
+
+    private bool IsValidTextInputs()
+    {
+        if (!ModelName.IsValid(modelName))
+        {
+            ToastService.Notify(new(ToastType.Danger, ModelName.ValidationErrorMessage));
+            return false;
+        }
+
+        if (price == null || !Price.IsValid(price.Value, "RUB"))
+        {
+            ToastService.Notify(new(ToastType.Danger, Price.ValidationErrorMessage));
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool IsValidSelectionInputs()
+    {
+        if (selectedCountry == null)
+        {
+            ToastService.Notify(new(ToastType.Danger, "Выберите страну"));
+            return false;
+        }
+
+        if (selectedDeviceType == null)
+        {
+            ToastService.Notify(new(ToastType.Danger, "Выберите тип техники"));
+            return false;
+        }
+
+        if (selectedManufacturer == null)
+        {
+            ToastService.Notify(new(ToastType.Danger, "Выберите производителя"));
+            return false;
+        }
+
+        if (photoPath == null)
+        {
+            ToastService.Notify(new(ToastType.Danger, "Выберите фотографию"));
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<string> SavePhotoToStorage()
+    {
+        if (photoSource == null)
+            return string.Empty;
+
+        return await S3Service.SaveMedia(photoSource);
+    }
+
+    private Nomenclature InitializeNomenclature(string photoUrl)
+    {
+        var nomenclature = new Nomenclature()
+        {
+            DeviceImage = new DeviceImage(photoUrl, "No caption"),
+            DeviceType = selectedDeviceType ?? throw new Exception(),
+            Manufacturer = selectedManufacturer ?? throw new Exception(),
+            Country = selectedCountry ?? throw new Exception(),
+            ModelName = new ModelName(modelName),
+            Price = new Price(price ?? throw new Exception(), "RUB")
+        };
+
+        if (Mode != FormModeEnum.Create && Nomenclature != null)
+            nomenclature.Id = Nomenclature.Id;
+
+        return nomenclature;
+    }
+
+    private async Task CreateCountry(string countryName)
+    {
+        var countryCode = "TC"; //TODO нужно находить реальный
+        var countryId = await countryService.CreateCountryAsync(countryName, countryCode);
+        if (countryId != default)
+        {
+            var newCountry = new Country()
+            {
+                Id = countryId,
+                Name = new CountryName(countryName),
+                Code = new CountryCode(countryCode)
+            };
+            Countries.Add(newCountry);
+            countrySelection.UpdateData();
+            StateHasChanged();
+        }
+    }
+}

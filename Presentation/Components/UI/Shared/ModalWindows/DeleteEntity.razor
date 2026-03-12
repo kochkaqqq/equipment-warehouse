@@ -1,0 +1,15 @@
+﻿<div>
+    <Button Color="ButtonColor.Secondary" @onclick="HideModal">Отмена</Button>
+    <Button Color="ButtonColor.Danger" @onclick=@(async () => await DeleteMethod.InvokeAsync(EntityId))>
+        Удалить
+    </Button>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback HideModal { get; set; }
+    [Parameter]
+    public EventCallback<Guid> DeleteMethod { get; set; }
+    [Parameter]
+    public Guid EntityId { get; set; }
+}

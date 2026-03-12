@@ -1,0 +1,8 @@
+{
+  "S3": {
+    "StorageUrl": "https://s3.twcstorage.ru",
+    "AccessKey": "Y45VETKXWAYRYTYZ61FV",
+    "SecretKey": "qC5xq65AfKA1E4yGCuw6vycFKKDBkXmT97C6uhxg",
+    "BucketName": "equipment-warehouse"
+  }
+}
