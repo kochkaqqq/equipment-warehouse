@@ -26,7 +26,8 @@ namespace Presentation
 
             services.AddHttpClient("", client =>
             {
-                client.BaseAddress = new Uri("http://localhost:7137");
+                var address = configuration["ApiSettings:BaseAddress"] ?? throw new Exception();
+                client.BaseAddress = new Uri(address);
             });
 
             services.Configure<S3Settings>(configuration.GetSection("S3"));
